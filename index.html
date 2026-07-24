@@ -299,8 +299,8 @@ function getJointDistribution(targetTotalCount, targetTurn, maxMulliganCount) {
         let nonTargetInHand = 4 - i;
         let actualReturn = Math.min(nonTargetInHand, maxMulliganCount);
         
-        let keepCount = 4 - actualReturn;
-        let deckAfterReturnN = N - keepCount;
+        let keepCount = 4 - actualReturn; 
+        let deckAfterReturnN = N - keepCount; 
         let deckAfterReturnK = K - i; 
 
         let distForThisI = new Array(K + 1).fill(0);
@@ -416,7 +416,7 @@ document.getElementById('calc-btn').addEventListener('click', () => {
     let htmlOutput = `<strong>${timingStr} における確率比較（マリガン: ${mulliganCount}枚）</strong><br>`;
     htmlOutput += `<span style="font-size:0.9rem; color:#d35400;">${conditionDesc}</span><br>`;
     
-    htmlOutput += `<h4 style="margin: 20px 0 5px 0; font-size: 0.95rem; color: #2c3e50;">▼ ◯枚 引く確率</h4>`;
+    htmlOutput += `<h4 style="margin: 20px 0 5px 0; font-size: 0.95rem; color: #2c3e50;">▼ ちょうど◯枚 引く確率</h4>`;
     htmlOutput += `<table class="result-table"><thead><tr><th>条件</th><th>マリガン前</th><th>マリガン後</th><th>差分 (効果)</th></tr></thead><tbody>`;
     for (let x = 0; x <= targetTotalCount; x++) {
         let probBefore = distBefore[x];
@@ -429,7 +429,7 @@ document.getElementById('calc-btn').addEventListener('click', () => {
         let diffColor = diff > 0 ? '#27ae60' : (diff < 0 ? '#e74c3c' : '#666');
 
         htmlOutput += `<tr>`;
-        htmlOutput += `<td><strong>${x}枚</strong></td>`;
+        htmlOutput += `<td><strong>ちょうど ${x}枚</strong></td>`;
         htmlOutput += `<td>${percentBefore}%</td>`;
         htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${percentAfter}%</span></td>`;
         htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${diffStr}</span></td>`;
