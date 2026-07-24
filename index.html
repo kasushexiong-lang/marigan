@@ -23,13 +23,16 @@
         .flex > div { flex: 1; min-width: 280px; }
         .result-box { background: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 5px solid #3498db; margin-top: 15px; }
         .turn-config-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem; background: #fff; padding: 6px 10px; border: 1px solid #e1e8ed; border-radius: 4px; }
+        .result-table { width: 100%; margin-top: 10px; background: #fff; }
+        .result-table th { background: #e2e8f0; font-size: 0.85rem; }
+        .result-table td { font-size: 0.9rem; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>カードゲーム簡易確率計算ツール</h1>
-    <p style="font-size: 0.85rem; color: #666;">デッキ40枚固定・初期手札4枚・毎ターン1ドロー ＋ 各ターン追加ドローを考慮し、引く枚数（1枚〜上限）ごとの確率を算出します。</p>
+    <p style="font-size: 0.85rem; color: #666;">デッキ40枚固定・初期手札4枚・毎ターン1ドロー ＋ 各ターン追加ドローを考慮し、引く枚数ごとの確率を算出します。</p>
 
     <div class="flex">
         <div class="section">
@@ -39,8 +42,20 @@
                 <option value="1">1枚交換</option>
                 <option value="2">2枚交換</option>
                 <option value="3">3枚交換</option>
-                <option value="4" selected>4枚全交換</option>
+                <option value="4" selected>4枚交換 (全交換)</option>
             </select>
+            <p style="font-size: 0.75rem; color: #27ae60; margin-top: 4px; margin-bottom: 0;">※指定カードはすべてキープし、それ以外の不要牌のみをここまで交換します</p>
+
+            <label for="fixed-initial" style="margin-top: 15px;">初期手札の条件指定:</label>
+            <select id="fixed-initial">
+                <option value="auto" selected>指定しない (全パターンの総合確率)</option>
+                <option value="0">0枚引いている前提</option>
+                <option value="1">1枚引いている前提</option>
+                <option value="2">2枚引いている前提</option>
+                <option value="3">3枚引いている前提</option>
+                <option value="4">4枚引いている前提</option>
+            </select>
+            <p style="font-size: 0.75rem; color: #27ae60; margin-top: 4px; margin-bottom: 0;">※「すでに引いている状態」からの確率を計算したい場合に変更してください</p>
 
             <label for="timing" style="margin-top: 15px;">算出タイミング:</label>
             <select id="timing">
@@ -62,7 +77,7 @@
             <label>各ターンの追加ドロー設定 (効果によるドロー):</label>
             <p style="font-size: 0.80rem; color: #666; margin-top:0;">各ターンに発生する通常ドロー(1枚)とは別の追加ドロー枚数を設定できます。</p>
             <div id="extra-draws-container" style="max-height: 150px; overflow-y: auto; background: #fff; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
-                <!-- 動的生成 (1〜10ターン目) -->
+                <!-- 動的生成 -->
             </div>
         </div>
     </div>
@@ -104,7 +119,7 @@
 
     <div id="result" class="result-box" style="display: none;">
         <strong>計算結果:</strong>
-        <div id="result-text" style="font-size: 1.05rem; margin-top: 5px; color: #2c3e50; line-height: 1.6;"></div>
+        <div id="result-text" style="font-size: 1.00rem; margin-top: 5px; color: #2c3e50; line-height: 1.6;"></div>
     </div>
 </div>
 
@@ -120,8 +135,7 @@ for(let t = 1; t <= 10; t++) {
 }
 
 function updateGroupDefsTotal() {
-    let sum = groupDefs.reduce((acc, cur) => acc + cur.count, 0);
-    return sum;
+    return groupDefs.reduce((acc, cur) => acc + cur.count, 0);
 }
 
 const tbody = document.querySelector('#group-table tbody');
@@ -132,9 +146,7 @@ function renderUI() {
     tbody.innerHTML = '';
     targetContainer.innerHTML = '';
 
-    // 初回レンダリング時、またはチェック状態を維持しつつ再描画
     let checkedIds = Array.from(document.querySelectorAll('.target-chk:checked')).map(el => parseInt(el.value));
-    // まだ一度もチェックボックスが存在しない（初回起動時）は G1 (id=1) のみチェック
     if(checkedIds.length === 0 && document.querySelectorAll('.target-chk').length === 0) {
         checkedIds = [1];
     }
@@ -275,72 +287,105 @@ function hypergeometric(N, K, n, k) {
     return (combination(K, k) * combination(N - K, n - k)) / combination(N, n);
 }
 
-function calculateProbability(targetTotalCount, targetTurn, mulliganCount, exactNeeded) {
+// マリガン前の確率計算（条件指定対応）
+function calculateBaseProbability(targetTotalCount, targetTurn, exactNeeded, fixedInitialStr) {
     let N = 40;
     let K = targetTotalCount;
+    let initialDraws = 4;
     let successProb = 0;
 
-    for (let i = 0; i <= 4; i++) {
-        let p_init = hypergeometric(N, K, 4, i);
+    for (let i = 0; i <= Math.min(K, initialDraws); i++) {
+        if (fixedInitialStr !== 'auto' && i !== parseInt(fixedInitialStr)) continue;
+        
+        let p_init = (fixedInitialStr === 'auto') ? hypergeometric(N, K, initialDraws, i) : 1.0;
         if (p_init === 0) continue;
 
-        let maxDropHit = Math.min(i, mulliganCount);
-        for (let dropHit = 0; dropHit <= maxDropHit; dropHit++) {
-            let dropMiss = mulliganCount - dropHit;
-            if (dropMiss < 0 || dropMiss > (4 - i)) continue;
+        if (targetTurn === 0) {
+            successProb += p_init * (i >= exactNeeded ? 1 : 0);
+        } else {
+            let currentDeckN = N - initialDraws;
+            let currentDeckK = K - i;
+            let neededMore = exactNeeded - i;
+            let currentSuccess = 0;
 
-            let waysDrop = combination(i, dropHit) * combination(4 - i, dropMiss);
-            let totalWaysDrop = combination(4, mulliganCount);
-            let pDrop = waysDrop / totalWaysDrop;
-
-            let deckAfterReturnN = N - 4 + mulliganCount;
-            let deckAfterReturnK = K - i + dropHit;
-
-            for (let newHit = 0; newHit <= mulliganCount; newHit++) {
-                let pDrawNew = hypergeometric(deckAfterReturnN, deckAfterReturnK, mulliganCount, newHit);
-                if (pDrawNew === 0) continue;
-
-                let finalHits = i - dropHit + newHit;
-                let currentSuccess = 0;
-
-                if (targetTurn === 0) {
-                    currentSuccess = (finalHits >= exactNeeded) ? 1 : 0;
-                } else {
-                    let currentDeckN = deckAfterReturnN - mulliganCount;
-                    let currentDeckK = deckAfterReturnK - newHit;
-                    
-                    let neededMore = exactNeeded - finalHits;
-                    if (neededMore <= 0) {
-                        currentSuccess = 1.0;
-                    } else {
-                        currentSuccess = calculateCumulativeSuccess(currentDeckN, currentDeckK, targetTurn, neededMore);
-                    }
+            if (neededMore <= 0) {
+                currentSuccess = 1.0; 
+            } else {
+                let totalDrawnSoFar = 0;
+                for(let t = 1; t <= targetTurn; t++) {
+                    totalDrawnSoFar += 1 + (extraDraws[t] || 0);
                 }
-
-                successProb += p_init * pDrop * pDrawNew * currentSuccess;
+                let maxPossibleDraw = Math.min(currentDeckN, totalDrawnSoFar);
+                let cumulativeProb = 0;
+                for (let hit = neededMore; hit <= Math.min(currentDeckK, maxPossibleDraw); hit++) {
+                    cumulativeProb += hypergeometric(currentDeckN, currentDeckK, maxPossibleDraw, hit);
+                }
+                currentSuccess = cumulativeProb;
             }
+            successProb += p_init * currentSuccess;
         }
     }
     return successProb;
 }
 
-function calculateCumulativeSuccess(startN, startK, targetTurn, neededMore) {
-    let totalDrawnSoFar = 0;
-    for(let t = 1; t <= targetTurn; t++) {
-        totalDrawnSoFar += 1 + (extraDraws[t] || 0);
+// マリガン後の確率計算（条件指定対応）
+function calculateProbability(targetTotalCount, targetTurn, mulliganCount, exactNeeded, fixedInitialStr) {
+    if (mulliganCount === 0) {
+        return calculateBaseProbability(targetTotalCount, targetTurn, exactNeeded, fixedInitialStr);
     }
 
-    let maxPossibleDraw = Math.min(startN, totalDrawnSoFar);
-    let cumulativeProb = 0;
+    let N = 40;
+    let K = targetTotalCount;
+    let successProb = 0;
 
-    let K = startK;
-    let N = startN;
-    
-    for (let hit = neededMore; hit <= Math.min(K, maxPossibleDraw); hit++) {
-        let p = hypergeometric(N, K, maxPossibleDraw, hit);
-        cumulativeProb += p;
+    for (let i = 0; i <= Math.min(K, 4); i++) {
+        if (fixedInitialStr !== 'auto' && i !== parseInt(fixedInitialStr)) continue;
+        
+        let p_init = (fixedInitialStr === 'auto') ? hypergeometric(N, K, 4, i) : 1.0;
+        if (p_init === 0) continue;
+
+        let nonTargetInHand = 4 - i;
+        let actualReturn = Math.min(nonTargetInHand, mulliganCount);
+
+        let deckAfterReturnN = N - 4;
+        let deckAfterReturnK = K - i;
+        
+        let minNewHit = 0; 
+        let maxNewHit = Math.min(actualReturn, deckAfterReturnK);
+
+        for (let newHit = minNewHit; newHit <= maxNewHit; newHit++) {
+            let pDrawNew = hypergeometric(deckAfterReturnN, deckAfterReturnK, actualReturn, newHit);
+            if (pDrawNew === 0) continue;
+
+            let finalHits = i + newHit;
+            let currentSuccess = 0;
+
+            if (targetTurn === 0) {
+                currentSuccess = (finalHits >= exactNeeded) ? 1 : 0;
+            } else {
+                let currentDeckN = N - 4;
+                let currentDeckK = K - finalHits;
+                
+                let neededMore = exactNeeded - finalHits;
+                if (neededMore <= 0) {
+                    currentSuccess = 1.0;
+                } else {
+                    let totalDrawnSoFar = 0;
+                    for(let t = 1; t <= targetTurn; t++) {
+                        totalDrawnSoFar += 1 + (extraDraws[t] || 0);
+                    }
+                    let maxPossibleDraw = Math.min(currentDeckN, totalDrawnSoFar);
+                    let cumulativeProb = 0;
+                    for (let hit = neededMore; hit <= Math.min(currentDeckK, maxPossibleDraw); hit++) {
+                        cumulativeProb += hypergeometric(currentDeckN, currentDeckK, maxPossibleDraw, hit);
+                    }
+                    currentSuccess = cumulativeProb;
+                }
+            }
+            successProb += p_init * pDrawNew * currentSuccess;
+        }
     }
-    return cumulativeProb;
+    return successProb;
 }
 
 document.getElementById('calc-btn').addEventListener('click', () => {
@@ -351,6 +396,16 @@ document.getElementById('calc-btn').addEventListener('click', () => {
     }
 
     let mulliganCount = parseInt(document.getElementById('mulligan').value);
+    let fixedInitialStr = document.getElementById('fixed-initial').value;
+    
+    if (fixedInitialStr !== 'auto') {
+        let initialCount = parseInt(fixedInitialStr);
+        if (mulliganCount + initialCount >= 5) {
+            alert(`エラー：\n「引いている前提の枚数（${initialCount}枚）」と「引き直し枚数（${mulliganCount}枚）」の合計が5枚以上になっています。\n初期手札は4枚のため、合計4枚以下になるように設定してください。`);
+            return;
+        }
+    }
+
     let timingVal = document.getElementById('timing').value;
     let targetTurn = (timingVal === 'opening') ? 0 : parseInt(timingVal);
 
@@ -369,14 +424,37 @@ document.getElementById('calc-btn').addEventListener('click', () => {
         return;
     }
 
-    let timingStr = (targetTurn === 0) ? '初期手札（マリガン後）時点' : `${targetTurn}ターン目ドロー後`;
-    let htmlOutput = `<strong>${timingStr}までに指定グループのカードを引く確率:</strong><br>`;
+    if (fixedInitialStr !== 'auto' && parseInt(fixedInitialStr) > targetTotalCount) {
+        alert(`デッキ内のターゲット総数（${targetTotalCount}枚）より多い枚数（${fixedInitialStr}枚）を初手に引くことはできません。設定を見直してください。`);
+        return;
+    }
+
+    let timingStr = (targetTurn === 0) ? '初期手札（マリガン後）時点' : `${targetTurn}ターン目 ドロー後`;
+    let conditionStr = (fixedInitialStr === 'auto') ? '全パターンの平均確率' : `【条件: 初手に${fixedInitialStr}枚引いている】`;
+    
+    let htmlOutput = `<strong>${timingStr} における確率比較（マリガン: ${mulliganCount}枚）</strong><br>`;
+    htmlOutput += `<span style="font-size:0.9rem; color:#d35400;">${conditionStr}</span><br>`;
+    htmlOutput += `<table class="result-table">`;
+    htmlOutput += `<thead><tr><th>条件</th><th>マリガン前 (初期)</th><th>マリガン後</th><th>差分 (効果)</th></tr></thead><tbody>`;
     
     for (let x = 1; x <= targetTotalCount; x++) {
-        let prob = calculateProbability(targetTotalCount, targetTurn, mulliganCount, x);
-        let percent = (prob * 100).toFixed(2);
-        htmlOutput += `・${x}枚以上引く確率: <span style="color:#e74c3c;">${percent}%</span> (${prob.toFixed(4)})<br>`;
+        let probBefore = calculateBaseProbability(targetTotalCount, targetTurn, x, fixedInitialStr);
+        let probAfter = calculateProbability(targetTotalCount, targetTurn, mulliganCount, x, fixedInitialStr);
+        
+        let percentBefore = (probBefore * 100).toFixed(2);
+        let percentAfter = (probAfter * 100).toFixed(2);
+        let diff = (probAfter - probBefore) * 100;
+        let diffStr = (diff >= 0 ? '+' : '') + diff.toFixed(2) + '%';
+        let diffColor = diff > 0 ? '#27ae60' : (diff < 0 ? '#e74c3c' : '#666');
+
+        htmlOutput += `<tr>`;
+        htmlOutput += `<td><strong>${x}枚以上</strong> 引く確率</td>`;
+        htmlOutput += `<td>${percentBefore}%</td>`;
+        htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${percentAfter}%</span></td>`;
+        htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${diffStr}</span></td>`;
+        htmlOutput += `</tr>`;
     }
+    htmlOutput += `</tbody></table>`;
 
     let resultTextEl = document.getElementById('result-text');
     resultTextEl.innerHTML = htmlOutput;
