@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>カードゲーム簡易確率計算ツール</title>
+    <style>
+        body { font-family: sans-serif, Arial; margin: 20px; background: #f4f6f9; color: #333; }
+        .container { max-width: 950px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h1 { font-size: 1.5rem; margin-bottom: 10px; color: #2c3e50; }
+        .section { margin-bottom: 20px; padding: 15px; border: 1px solid #e1e8ed; border-radius: 6px; background: #fafbfc; }
+        label { display: block; margin-bottom: 6px; font-weight: bold; font-size: 0.9rem; }
+        input[type="number"], select { padding: 6px; width: 100px; margin-right: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { border: 1px solid #dfe3e6; padding: 8px; text-align: center; }
+        th { background: #f1f5f8; }
+        button { background: #3498db; color: #fff; border: none; padding: 10px 20px; font-size: 1rem; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #2980b9; }
+        .btn-secondary { background: #2ecc71; margin-right: 10px; }
+        .btn-secondary:hover { background: #27ae60; }
+        .btn-danger { background: #e74c3c; padding: 4px 8px; font-size: 0.8rem; }
+        .btn-danger:hover { background: #c0392b; }
+        .flex { display: flex; gap: 20px; flex-wrap: wrap; }
+        .flex > div { flex: 1; min-width: 280px; }
+        .result-box { background: #e8f4fd; padding: 15px; border-radius: 6px; border-left: 5px solid #3498db; margin-top: 15px; }
+        .turn-config-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 0.85rem; background: #fff; padding: 6px 10px; border: 1px solid #e1e8ed; border-radius: 4px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>カードゲーム簡易確率計算ツール</h1>
+    <p style="font-size: 0.85rem; color: #666;">デッキ40枚固定・初期手札4枚・毎ターン1ドロー ＋ 各ターン追加ドローを考慮し、引く枚数（1枚〜上限）ごとの確率を算出します。</p>
+
+    <div class="flex">
+        <div class="section">
+            <label for="mulligan">引き直し枚数 (マリガン):</label>
+            <select id="mulligan">
+                <option value="0">0枚 (そのまま)</option>
+                <option value="1">1枚交換</option>
+                <option value="2">2枚交換</option>
+                <option value="3">3枚交換</option>
+                <option value="4" selected>4枚全交換</option>
+            </select>
+
+            <label for="timing" style="margin-top: 15px;">算出タイミング:</label>
+            <select id="timing">
+                <option value="opening">初期手札時点 (マリガン後)</option>
+                <option value="1" selected>1ターン目 ドロー後</option>
+                <option value="2">2ターン目 ドロー後</option>
+                <option value="3">3ターン目 ドロー後</option>
+                <option value="4">4ターン目 ドロー後</option>
+                <option value="5">5ターン目 ドロー後</option>
+                <option value="6">6ターン目 ドロー後</option>
+                <option value="7">7ターン目 ドロー後</option>
+                <option value="8">8ターン目 ドロー後</option>
+                <option value="9">9ターン目 ドロー後</option>
+                <option value="10">10ターン目 ドロー後</option>
+            </select>
+        </div>
+
+        <div class="section">
+            <label>各ターンの追加ドロー設定 (効果によるドロー):</label>
+            <p style="font-size: 0.80rem; color: #666; margin-top:0;">各ターンに発生する通常ドロー(1枚)とは別の追加ドロー枚数を設定できます。</p>
+            <div id="extra-draws-container" style="max-height: 150px; overflow-y: auto; background: #fff; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+                <!-- 動的生成 (1〜10ターン目) -->
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <label>ターゲット指定 (複数選択可):</label>
+        <p style="font-size: 0.8rem; color: #666; margin-top:0;">チェックを入れたグループのカードが手札に加わる確率を計算します。</p>
+        <div id="target-checkboxes" style="max-height: 120px; overflow-y: auto; background: #fff; padding: 5px; border: 1px solid #ccc; border-radius: 4px;">
+            <!-- 動的生成 -->
+        </div>
+    </div>
+
+    <div class="section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <label style="margin: 0;">カードグループ設定 (総計40枚になるよう設定してください)</label>
+            <button type="button" id="add-group-btn" class="btn-secondary" style="padding: 6px 12px; font-size: 0.9rem;">＋ グループを追加</button>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <span id="total-cards-label" style="font-weight: bold; color: #27ae60;">現在のデッキ枚数: 40 / 40枚</span>
+        </div>
+        <div style="max-height: 250px; overflow-y: auto;">
+            <table id="group-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>グループ名 / カード名</th>
+                        <th>枚数 (0〜3枚)</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- 動的生成 -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <button id="calc-btn">確率を計算する</button>
+
+    <div id="result" class="result-box" style="display: none;">
+        <strong>計算結果:</strong>
+        <div id="result-text" style="font-size: 1.05rem; margin-top: 5px; color: #2c3e50; line-height: 1.6;"></div>
+    </div>
+</div>
+
+<script>
+const groupDefs = [];
+for(let g = 1; g <= 14; g++) {
+    groupDefs.push({ id: g, name: `グループ ${g}`, count: (g <= 13 ? 3 : 1) });
+}
+
+const extraDraws = {};
+for(let t = 1; t <= 10; t++) {
+    extraDraws[t] = 0;
+}
+
+function updateGroupDefsTotal() {
+    let sum = groupDefs.reduce((acc, cur) => acc + cur.count, 0);
+    return sum;
+}
+
+const tbody = document.querySelector('#group-table tbody');
+const targetContainer = document.getElementById('target-checkboxes');
+const extraDrawsContainer = document.getElementById('extra-draws-container');
+
+function renderUI() {
+    tbody.innerHTML = '';
+    targetContainer.innerHTML = '';
+
+    // 初回レンダリング時、またはチェック状態を維持しつつ再描画
+    let checkedIds = Array.from(document.querySelectorAll('.target-chk:checked')).map(el => parseInt(el.value));
+    // まだ一度もチェックボックスが存在しない（初回起動時）は G1 (id=1) のみチェック
+    if(checkedIds.length === 0 && document.querySelectorAll('.target-chk').length === 0) {
+        checkedIds = [1];
+    }
+
+    groupDefs.forEach(g => {
+        let tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${g.id}</td>
+            <td><input type="text" value="${g.name}" data-id="${g.id}" class="g-name" style="width:80%;"></td>
+            <td><input type="number" min="0" max="3" value="${g.count}" data-id="${g.id}" class="g-count"></td>
+            <td><button type="button" class="btn-danger del-btn" data-id="${g.id}">削除</button></td>
+        `;
+        tbody.appendChild(tr);
+
+        if(g.count > 0) {
+            let isChecked = checkedIds.includes(g.id) ? 'checked' : '';
+            let label = document.createElement('label');
+            label.style.display = 'inline-block';
+            label.style.marginRight = '10px';
+            label.style.fontWeight = 'normal';
+            label.innerHTML = `<input type="checkbox" value="${g.id}" class="target-chk" ${isChecked}> ${g.name} (${g.count}枚)`;
+            targetContainer.appendChild(label);
+        }
+    });
+
+    extraDrawsContainer.innerHTML = '';
+    for(let t = 1; t <= 10; t++) {
+        let row = document.createElement('div');
+        row.className = 'turn-config-row';
+        row.innerHTML = `
+            <span>${t}ターン目 追加ドロー:</span>
+            <input type="number" min="0" max="20" value="${extraDraws[t]}" data-turn="${t}" class="extra-draw-input" style="width: 70px;"> 枚
+        `;
+        extraDrawsContainer.appendChild(row);
+    }
+
+    attachEvents();
+    updateTotalView();
+}
+
+function attachEvents() {
+    document.querySelectorAll('.g-count').forEach(input => {
+        input.addEventListener('change', (e) => {
+            let id = parseInt(e.target.dataset.id);
+            let val = parseInt(e.target.value);
+            if (val < 0) val = 0;
+            if (val > 3) val = 3;
+            e.target.value = val;
+            
+            let target = groupDefs.find(g => g.id === id);
+            if(target) target.count = val;
+
+            updateTotalView();
+            rebuildTargetCheckboxes();
+        });
+    });
+
+    document.querySelectorAll('.g-name').forEach(input => {
+        input.addEventListener('input', (e) => {
+            let id = parseInt(e.target.dataset.id);
+            let target = groupDefs.find(g => g.id === id);
+            if(target) target.name = e.target.value;
+        });
+    });
+
+    document.querySelectorAll('.del-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            let id = parseInt(e.target.dataset.id);
+            if(groupDefs.length <= 1) {
+                alert('グループは最低1つ必要です。');
+                return;
+            }
+            let index = groupDefs.findIndex(g => g.id === id);
+            if(index !== -1) {
+                groupDefs.splice(index, 1);
+                renderUI();
+            }
+        });
+    });
+
+    document.querySelectorAll('.extra-draw-input').forEach(input => {
+        input.addEventListener('change', (e) => {
+            let turn = parseInt(e.target.dataset.turn);
+            let val = parseInt(e.target.value) || 0;
+            if(val < 0) val = 0;
+            e.target.value = val;
+            extraDraws[turn] = val;
+        });
+    });
+}
+
+document.getElementById('add-group-btn').addEventListener('click', () => {
+    let newId = groupDefs.length > 0 ? Math.max(...groupDefs.map(g => g.id)) + 1 : 1;
+    groupDefs.push({ id: newId, name: `グループ ${newId}`, count: 0 });
+    renderUI();
+});
+
+function rebuildTargetCheckboxes() {
+    let checkedIds = Array.from(document.querySelectorAll('.target-chk:checked')).map(el => parseInt(el.value));
+    targetContainer.innerHTML = '';
+    groupDefs.forEach(g => {
+        if(g.count > 0) {
+            let isChecked = checkedIds.includes(g.id) ? 'checked' : '';
+            let label = document.createElement('label');
+            label.style.display = 'inline-block';
+            label.style.marginRight = '10px';
+            label.style.fontWeight = 'normal';
+            label.innerHTML = `<input type="checkbox" value="${g.id}" class="target-chk" ${isChecked}> ${g.name} (${g.count}枚)`;
+            targetContainer.appendChild(label);
+        }
+    });
+}
+
+function updateTotalView() {
+    let sum = updateGroupDefsTotal();
+    let label = document.getElementById('total-cards-label');
+    label.innerText = `現在のデッキ枚数: ${sum} / 40枚`;
+    if(sum !== 40) {
+        label.style.color = '#e74c3c';
+    } else {
+        label.style.color = '#27ae60';
+    }
+}
+
+function combination(n, r) {
+    if (r < 0 || r > n) return 0;
+    if (r === 0 || r === n) return 1;
+    if (r > n / r) r = n - r;
+    let c = 1;
+    for (let i = 1; i <= r; i++) {
+        c = c * (n - (r - i)) / i;
+    }
+    return c;
+}
+
+function hypergeometric(N, K, n, k) {
+    if (k < 0 || k > K || k > n || (n - k) > (N - K)) return 0;
+    return (combination(K, k) * combination(N - K, n - k)) / combination(N, n);
+}
+
+function calculateProbability(targetTotalCount, targetTurn, mulliganCount, exactNeeded) {
+    let N = 40;
+    let K = targetTotalCount;
+    let successProb = 0;
+
+    for (let i = 0; i <= 4; i++) {
+        let p_init = hypergeometric(N, K, 4, i);
+        if (p_init === 0) continue;
+
+        let maxDropHit = Math.min(i, mulliganCount);
+        for (let dropHit = 0; dropHit <= maxDropHit; dropHit++) {
+            let dropMiss = mulliganCount - dropHit;
+            if (dropMiss < 0 || dropMiss > (4 - i)) continue;
+
+            let waysDrop = combination(i, dropHit) * combination(4 - i, dropMiss);
+            let totalWaysDrop = combination(4, mulliganCount);
+            let pDrop = waysDrop / totalWaysDrop;
+
+            let deckAfterReturnN = N - 4 + mulliganCount;
+            let deckAfterReturnK = K - i + dropHit;
+
+            for (let newHit = 0; newHit <= mulliganCount; newHit++) {
+                let pDrawNew = hypergeometric(deckAfterReturnN, deckAfterReturnK, mulliganCount, newHit);
+                if (pDrawNew === 0) continue;
+
+                let finalHits = i - dropHit + newHit;
+                let currentSuccess = 0;
+
+                if (targetTurn === 0) {
+                    currentSuccess = (finalHits >= exactNeeded) ? 1 : 0;
+                } else {
+                    let currentDeckN = deckAfterReturnN - mulliganCount;
+                    let currentDeckK = deckAfterReturnK - newHit;
+                    
+                    let neededMore = exactNeeded - finalHits;
+                    if (neededMore <= 0) {
+                        currentSuccess = 1.0;
+                    } else {
+                        currentSuccess = calculateCumulativeSuccess(currentDeckN, currentDeckK, targetTurn, neededMore);
+                    }
+                }
+
+                successProb += p_init * pDrop * pDrawNew * currentSuccess;
+            }
+        }
+    }
+    return successProb;
+}
+
+function calculateCumulativeSuccess(startN, startK, targetTurn, neededMore) {
+    let totalDrawnSoFar = 0;
+    for(let t = 1; t <= targetTurn; t++) {
+        totalDrawnSoFar += 1 + (extraDraws[t] || 0);
+    }
+
+    let maxPossibleDraw = Math.min(startN, totalDrawnSoFar);
+    let cumulativeProb = 0;
+
+    let K = startK;
+    let N = startN;
+    
+    for (let hit = neededMore; hit <= Math.min(K, maxPossibleDraw); hit++) {
+        let p = hypergeometric(N, K, maxPossibleDraw, hit);
+        cumulativeProb += p;
+    }
+    return cumulativeProb;
+}
+
+document.getElementById('calc-btn').addEventListener('click', () => {
+    let totalCards = updateGroupDefsTotal();
+    if (totalCards !== 40) {
+        alert('デッキの総枚数が40枚になっていません。現在の枚数: ' + totalCards + '枚');
+        return;
+    }
+
+    let mulliganCount = parseInt(document.getElementById('mulligan').value);
+    let timingVal = document.getElementById('timing').value;
+    let targetTurn = (timingVal === 'opening') ? 0 : parseInt(timingVal);
+
+    let selectedGroupIds = Array.from(document.querySelectorAll('.target-chk:checked')).map(el => parseInt(el.value));
+    if (selectedGroupIds.length === 0) {
+        alert('確率を調べたいカードグループを1つ以上選択してください。');
+        return;
+    }
+
+    let targetTotalCount = groupDefs
+        .filter(g => selectedGroupIds.includes(g.id))
+        .reduce((sum, g) => sum + g.count, 0);
+
+    if (targetTotalCount === 0) {
+        alert('選択されたグループのカード枚数が合計0枚です。');
+        return;
+    }
+
+    let timingStr = (targetTurn === 0) ? '初期手札（マリガン後）時点' : `${targetTurn}ターン目ドロー後`;
+    let htmlOutput = `<strong>${timingStr}までに指定グループのカードを引く確率:</strong><br>`;
+    
+    for (let x = 1; x <= targetTotalCount; x++) {
+        let prob = calculateProbability(targetTotalCount, targetTurn, mulliganCount, x);
+        let percent = (prob * 100).toFixed(2);
+        htmlOutput += `・${x}枚以上引く確率: <span style="color:#e74c3c;">${percent}%</span> (${prob.toFixed(4)})<br>`;
+    }
+
+    let resultTextEl = document.getElementById('result-text');
+    resultTextEl.innerHTML = htmlOutput;
+    document.getElementById('result').style.display = 'block';
+});
+
+renderUI();
+</script>
+
+</body>
+</html>
