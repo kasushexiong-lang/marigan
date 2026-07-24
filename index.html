@@ -32,7 +32,7 @@
 
 <div class="container">
     <h1>カードゲーム簡易確率計算ツール</h1>
-    <p style="font-size: 0.85rem; color: #666;">デッキ40枚固定・初期手札4枚・毎ターン1ドロー ＋ 各ターン追加ドローを考慮し、引く枚数ごとの確率を算出します。</p>
+    <p style="font-size: 0.85rem; color: #666;">デッキ40枚固定・初期手札4枚・毎ターン1ドロー ＋ 各ターン追加ドローを考慮し、厳密な条件付き確率を算出します。</p>
 
     <div class="flex">
         <div class="section">
@@ -44,7 +44,6 @@
                 <option value="3">3枚交換</option>
                 <option value="4">4枚交換 (全交換)</option>
             </select>
-            <p style="font-size: 0.75rem; color: #27ae60; margin-top: 4px; margin-bottom: 0;">※指定カードはすべてキープし、それ以外の不要牌のみをここまで交換します</p>
 
             <label for="fixed-initial" style="margin-top: 15px;">初期手札の条件指定:</label>
             <select id="fixed-initial">
@@ -55,7 +54,7 @@
                 <option value="3">3枚引いている前提</option>
                 <option value="4">4枚引いている前提</option>
             </select>
-            <p style="font-size: 0.75rem; color: #27ae60; margin-top: 4px; margin-bottom: 0;">※「すでに引いている状態」からの条件付き確率を計算したい場合に変更してください</p>
+            <p style="font-size: 0.75rem; color: #27ae60; margin-top: 4px; margin-bottom: 0;">※指定した状態を前提とした厳密な条件付き確率（P(結果 | 条件)）を計算します</p>
 
             <label for="timing" style="margin-top: 15px;">算出タイミング:</label>
             <select id="timing">
@@ -287,28 +286,25 @@ function hypergeometric(N, K, n, k) {
     return (combination(K, k) * combination(N - K, n - k)) / combination(N, n);
 }
 
-// 確率分布（ちょうど0枚, 1枚, ... K枚になる確率の配列）を厳密計算
-function getProbabilityDistribution(targetTotalCount, targetTurn, maxMulliganCount, fixedInitialStr) {
+function getJointDistribution(targetTotalCount, targetTurn, maxMulliganCount) {
     let N = 40;
     let K = targetTotalCount;
-    let dist = new Array(K + 1).fill(0);
+    let joint = {};
     let initialDraws = 4;
 
-    // 初手の引きパターン (i枚引く)
     for (let i = 0; i <= Math.min(K, initialDraws); i++) {
-        // 条件指定がある場合は、該当しないパターンは計算から除外
-        if (fixedInitialStr !== 'auto' && i !== parseInt(fixedInitialStr)) continue;
-        
-        let p_init = (fixedInitialStr === 'auto') ? hypergeometric(N, K, initialDraws, i) : 1.0;
+        let p_init = hypergeometric(N, K, initialDraws, i);
         if (p_init === 0) continue;
 
         let nonTargetInHand = 4 - i;
         let actualReturn = Math.min(nonTargetInHand, maxMulliganCount);
         
-        // 戻すカードを脇に置き、残りの36枚から引く
-        let deckAfterReturnN = N - 4;
-        let deckAfterReturnK = K - i;
-        
+        let keepCount = 4 - actualReturn;
+        let deckAfterReturnN = N - keepCount;
+        let deckAfterReturnK = K - i; 
+
+        let distForThisI = new Array(K + 1).fill(0);
+
         let minNewHit = 0;
         let maxNewHit = Math.min(actualReturn, deckAfterReturnK);
 
@@ -317,35 +313,34 @@ function getProbabilityDistribution(targetTotalCount, targetTurn, maxMulliganCou
             if (pDrawNew === 0) continue;
 
             let finalHits = i + newHit;
-            
+
             if (targetTurn === 0) {
-                // 初手時点での集計
                 if (finalHits <= K) {
-                    dist[finalHits] += p_init * pDrawNew;
+                    distForThisI[finalHits] += p_init * pDrawNew;
                 }
             } else {
-                // ドローフェイズ（脇に置いたカードを山札に戻した後のデッキ36枚から引く）
-                let currentDeckN = N - 4; 
-                let currentDeckK = K - finalHits;
+                let currentDeckN = deckAfterReturnN - actualReturn; 
+                let currentDeckK = deckAfterReturnK - newHit;
                 
                 let totalDrawnSoFar = 0;
                 for(let t = 1; t <= targetTurn; t++) {
                     totalDrawnSoFar += 1 + (extraDraws[t] || 0);
                 }
                 let maxPossibleDraw = Math.min(currentDeckN, totalDrawnSoFar);
-                
+
                 for (let turnHit = 0; turnHit <= Math.min(currentDeckK, maxPossibleDraw); turnHit++) {
                     let pTurnDraw = hypergeometric(currentDeckN, currentDeckK, maxPossibleDraw, turnHit);
                     if (pTurnDraw > 0) {
                         let totalEndHits = finalHits + turnHit;
                         if (totalEndHits > K) totalEndHits = K;
-                        dist[totalEndHits] += p_init * pDrawNew * pTurnDraw;
+                        distForThisI[totalEndHits] += p_init * pDrawNew * pTurnDraw;
                     }
                 }
             }
         }
+        joint[i] = distForThisI;
     }
-    return dist;
+    return joint;
 }
 
 document.getElementById('calc-btn').addEventListener('click', () => {
@@ -357,15 +352,6 @@ document.getElementById('calc-btn').addEventListener('click', () => {
 
     let mulliganCount = parseInt(document.getElementById('mulligan').value);
     let fixedInitialStr = document.getElementById('fixed-initial').value;
-    
-    if (fixedInitialStr !== 'auto') {
-        let initialCount = parseInt(fixedInitialStr);
-        if (mulliganCount + initialCount >= 5) {
-            alert(`エラー：\n「引いている前提の枚数（${initialCount}枚）」と「引き直し枚数（${mulliganCount}枚）」の合計が5枚以上になっています。\n初期手札は4枚のため、合計4枚以下になるように設定してください。`);
-            return;
-        }
-    }
-
     let timingVal = document.getElementById('timing').value;
     let targetTurn = (timingVal === 'opening') ? 0 : parseInt(timingVal);
 
@@ -389,18 +375,48 @@ document.getElementById('calc-btn').addEventListener('click', () => {
         return;
     }
 
-    // 分布配列を取得 (Before = マリガン0枚, After = 指定マリガン枚数)
-    let distBefore = getProbabilityDistribution(targetTotalCount, targetTurn, 0, fixedInitialStr);
-    let distAfter = getProbabilityDistribution(targetTotalCount, targetTurn, mulliganCount, fixedInitialStr);
+    let jointBefore = getJointDistribution(targetTotalCount, targetTurn, 0);
+    let jointAfter = getJointDistribution(targetTotalCount, targetTurn, mulliganCount);
+
+    function computeTargetDistribution(joint, conditionStr) {
+        let dist = new Array(targetTotalCount + 1).fill(0);
+        let totalProb = 0;
+
+        if (conditionStr === 'auto') {
+            for (let i in joint) {
+                for (let x = 0; x <= targetTotalCount; x++) {
+                    dist[x] += joint[i][x];
+                }
+            }
+            for (let x = 0; x <= targetTotalCount; x++) totalProb += dist[x];
+        } else {
+            let iCond = parseInt(conditionStr);
+            if (joint[iCond]) {
+                for (let x = 0; x <= targetTotalCount; x++) {
+                    dist[x] = joint[iCond][x];
+                }
+            }
+            for (let x = 0; x <= targetTotalCount; x++) totalProb += dist[x];
+        }
+
+        if (totalProb > 0) {
+            for (let x = 0; x <= targetTotalCount; x++) {
+                dist[x] /= totalProb;
+            }
+        }
+        return dist;
+    }
+
+    let distBefore = computeTargetDistribution(jointBefore, fixedInitialStr);
+    let distAfter = computeTargetDistribution(jointAfter, fixedInitialStr);
 
     let timingStr = (targetTurn === 0) ? '初期手札（マリガン後）時点' : `${targetTurn}ターン目 ドロー後`;
-    let conditionStr = (fixedInitialStr === 'auto') ? '全パターンの平均確率' : `【条件: 初手に ${fixedInitialStr} 枚引いている】`;
+    let conditionDesc = (fixedInitialStr === 'auto') ? '全パターンの総合確率' : `【条件: 初手に ${fixedInitialStr} 枚引いている前提】`;
     
     let htmlOutput = `<strong>${timingStr} における確率比較（マリガン: ${mulliganCount}枚）</strong><br>`;
-    htmlOutput += `<span style="font-size:0.9rem; color:#d35400;">${conditionStr}</span><br>`;
+    htmlOutput += `<span style="font-size:0.9rem; color:#d35400;">${conditionDesc}</span><br>`;
     
-    // --- 表1: ちょうど〇枚 引く確率 ---
-    htmlOutput += `<h4 style="margin: 20px 0 5px 0; font-size: 0.95rem; color: #2c3e50;">▼ ちょうど ◯枚 引く確率</h4>`;
+    htmlOutput += `<h4 style="margin: 20px 0 5px 0; font-size: 0.95rem; color: #2c3e50;">▼ ◯枚 引く確率</h4>`;
     htmlOutput += `<table class="result-table"><thead><tr><th>条件</th><th>マリガン前</th><th>マリガン後</th><th>差分 (効果)</th></tr></thead><tbody>`;
     for (let x = 0; x <= targetTotalCount; x++) {
         let probBefore = distBefore[x];
@@ -413,7 +429,7 @@ document.getElementById('calc-btn').addEventListener('click', () => {
         let diffColor = diff > 0 ? '#27ae60' : (diff < 0 ? '#e74c3c' : '#666');
 
         htmlOutput += `<tr>`;
-        htmlOutput += `<td><strong>ちょうど ${x}枚</strong></td>`;
+        htmlOutput += `<td><strong>${x}枚</strong></td>`;
         htmlOutput += `<td>${percentBefore}%</td>`;
         htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${percentAfter}%</span></td>`;
         htmlOutput += `<td><span style="color:${diffColor}; font-weight:bold;">${diffStr}</span></td>`;
@@ -421,7 +437,6 @@ document.getElementById('calc-btn').addEventListener('click', () => {
     }
     htmlOutput += `</tbody></table>`;
 
-    // --- 表2: 〇枚以上 引く確率 (累計) ---
     htmlOutput += `<h4 style="margin: 20px 0 5px 0; font-size: 0.95rem; color: #2c3e50;">▼ ◯枚以上 引く確率 (累計)</h4>`;
     htmlOutput += `<table class="result-table"><thead><tr><th>条件</th><th>マリガン前</th><th>マリガン後</th><th>差分 (効果)</th></tr></thead><tbody>`;
     for (let x = 1; x <= targetTotalCount; x++) {
